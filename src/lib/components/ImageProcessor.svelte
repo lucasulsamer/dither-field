@@ -45,6 +45,9 @@
 	let startPanX = 0;
 	let startPanY = 0;
 	
+	let scaleToggleShake = false;
+	let showScaleMessage = false;
+	
 	function startDragPanel(e: MouseEvent) {
 		if (!panelElement) return;
 		
@@ -324,6 +327,26 @@
 		processImage();
 	}
 	
+	function handleScaleToggle() {
+		if (scaleEnabled && originalImageData) {
+			const maxDimension = Math.max(originalImageData.width, originalImageData.height);
+			if (maxDimension <= 800) {
+				// Image is already small enough, reject the toggle
+				scaleEnabled = false;
+				scaleToggleShake = true;
+				showScaleMessage = true;
+				setTimeout(() => {
+					scaleToggleShake = false;
+				}, 500);
+				setTimeout(() => {
+					showScaleMessage = false;
+				}, 3000);
+				return;
+			}
+		}
+		processImage();
+	}
+	
 	function toggleOriginal() {
 		if (!originalImageData || !ctx || !canvas) return;
 		showOriginal = !showOriginal;
@@ -342,6 +365,22 @@
 			}
 			ctx.putImageData(processedImageData, 0, 0);
 		}
+	}
+	
+	function handleReloadImage() {
+		// Trigger file input - state will be reset when new image loads
+		const input = document.getElementById('fileInput') as HTMLInputElement;
+		if (input) {
+			input.value = ''; // Clear the input so the same file can be selected again
+			input.click();
+		}
+	}
+	
+	function swapColors() {
+		const temp = customWhite;
+		customWhite = customBlack;
+		customBlack = temp;
+		handleParamChange();
 	}
 	
 	$: toggleButtonCorner = (panelCorner === 'bottom-left' || panelCorner === 'top-left') ? 'bottom-right' : 'bottom-left';
@@ -369,6 +408,15 @@
 </header>
 
 <div class="processor">
+	<!-- Hidden file input that's always available -->
+	<input 
+		type="file" 
+		accept="image/png,image/jpeg" 
+		on:change={handleFileSelect}
+		id="fileInput"
+		style="display: none;"
+	/>
+	
 	{#if !imageLoaded}
 		<div 
 			class="upload-area"
@@ -389,12 +437,6 @@
 				</svg>
 				<h2>Upload Your Image</h2>
 				<p>Drop a PNG or JPG image here, or click anywhere to browse</p>
-				<input 
-					type="file" 
-					accept="image/png,image/jpeg" 
-					on:change={handleFileSelect}
-					id="fileInput"
-				/>
 			</div>
 		</div>
 	{:else}
@@ -430,48 +472,65 @@
 					<label for="mode">Processing Mode</label>
 					<select id="mode" bind:value={mode} on:change={handleModeChange}>
 						<option value="dither-bayer">Dithering (Bayer Matrix)</option>
+						<option value="dither-bayer-color">Dithering (Bayer Matrix - Color)</option>
 					</select>
 				</div>
 
-				<div class="control-group">
-					<label for="colorMode">Color Mode</label>
-					<select id="colorMode" bind:value={colorMode} on:change={handleParamChange}>
-						<option value="grayscale">Grayscale</option>
-						<option value="blue">Blue</option>
-						<option value="red">Red</option>
-						<option value="green">Green</option>
-						<option value="yellow">Yellow</option>
-						<option value="magenta">Magenta</option>
-						<option value="cyan">Cyan</option>
-						<option value="custom">Custom...</option>
-					</select>
-				</div>
+				{#if mode !== 'dither-bayer-color'}
+					<div class="control-group">
+						<label for="colorMode">Color Mode</label>
+						<select id="colorMode" bind:value={colorMode} on:change={handleParamChange}>
+							<option value="grayscale">Grayscale</option>
+							<option value="blue">Blue</option>
+							<option value="red">Red</option>
+							<option value="green">Green</option>
+							<option value="yellow">Yellow</option>
+							<option value="magenta">Magenta</option>
+							<option value="cyan">Cyan</option>
+							<option value="custom">Custom...</option>
+						</select>
+					</div>
+				{/if}
 
 				<div class="control-group">
 					<label for="scaleToggle">Scale</label>
-					<div class="toggle-container">
+					<div class="toggle-container" class:shake={scaleToggleShake}>
 						<label class="toggle-switch">
 							<input 
 								id="scaleToggle"
 								type="checkbox" 
 								bind:checked={scaleEnabled}
-								on:change={handleParamChange}
+								on:change={handleScaleToggle}
 							/>
 							<span class="slider"></span>
 						</label>
-						<span class="toggle-description">Downscale high-resolution images for better dithering</span>
+						<span class="toggle-description" class:error-message={showScaleMessage}>
+							{showScaleMessage ? 'Image already small enough' : 'Downscale high-resolution images for better dithering'}
+						</span>
 					</div>
 				</div>
 
 				{#if colorMode === 'custom'}
-					<div class="control-group">
-						<label for="customWhite">White Color</label>
-						<ColorPicker bind:hex={customWhite} {swatches} onInput={handleParamChange} />
-					</div>
-					
-					<div class="control-group">
-						<label for="customBlack">Black Color</label>
-						<ColorPicker bind:hex={customBlack} {swatches} onInput={handleParamChange} />
+					<div class="color-picker-container">
+						<div class="color-pickers">
+							<div class="control-group">
+								<label for="customWhite">White Color</label>
+								<ColorPicker bind:hex={customWhite} {swatches} onInput={handleParamChange} />
+							</div>
+							
+							<div class="control-group">
+								<label for="customBlack">Black Color</label>
+								<ColorPicker bind:hex={customBlack} {swatches} onInput={handleParamChange} />
+							</div>
+						</div>
+						<button class="swap-colors-btn" on:click={swapColors} title="Swap colors">
+							<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+								<polyline points="17 1 21 5 17 9"></polyline>
+								<path d="M3 11V9a4 4 0 0 1 4-4h14"></path>
+								<polyline points="7 23 3 19 7 15"></polyline>
+								<path d="M21 13v2a4 4 0 0 1-4 4H3"></path>
+							</svg>
+						</button>
 					</div>
 				{/if}
 
@@ -511,6 +570,18 @@
 		</div>
 		
 		<button 
+			class="reload-button {toggleButtonCorner}"
+			on:click={handleReloadImage}
+			title="Upload New Image"
+		>
+			<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+				<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+				<polyline points="17 8 12 3 7 8" />
+				<line x1="12" y1="3" x2="12" y2="15" />
+			</svg>
+		</button>
+		
+		<button 
 			class="toggle-button {toggleButtonCorner}"
 			on:click={toggleOriginal}
 			title={showOriginal ? 'Show Processed' : 'Show Original'}
@@ -547,14 +618,6 @@
 		align-items: center;
 		padding: 0 2rem;
 		z-index: 100;
-	}
-
-	.header h1 {
-		margin: 0;
-		color: white;
-		font-size: 1.5rem;
-		font-weight: 600;
-		letter-spacing: 0.5px;
 	}
 
 	.logo {
@@ -755,6 +818,7 @@
 		display: flex;
 		align-items: center;
 		gap: 0.75rem;
+		min-height: 52px;
 	}
 	
 	.toggle-switch {
@@ -817,6 +881,66 @@
 		font-size: 0.8rem;
 		color: #666;
 		line-height: 1.3;
+		transition: color 0.3s;
+		min-height: 2.6rem;
+		display: flex;
+		align-items: center;
+		flex: 1;
+		width: 0;
+	}
+	
+	.toggle-description.error-message {
+		color: #dc2626;
+		font-weight: 600;
+	}
+	
+	@keyframes shake {
+		0%, 100% { transform: translateX(0); }
+		10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+		20%, 40%, 60%, 80% { transform: translateX(5px); }
+	}
+	
+	.toggle-container.shake {
+		animation: shake 0.5s;
+	}
+	
+	.color-picker-container {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.75rem;
+	}
+	
+	.color-pickers {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+	}
+	
+	.swap-colors-btn {
+		flex-shrink: 0;
+		width: 40px;
+		height: 40px;
+		align-self: center;
+		border-radius: 8px;
+		background: linear-gradient(135deg, #64748b 0%, #475569 100%);
+		color: white;
+		border: none;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		transition: all 0.2s;
+		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+	}
+	
+	.swap-colors-btn:hover {
+		transform: scale(1.1);
+		box-shadow: 0 4px 8px rgba(100, 116, 139, 0.4);
+	}
+	
+	.swap-colors-btn:active {
+		transform: scale(1.05);
 	}
 
 	select {
@@ -896,6 +1020,7 @@
 		transform: translateY(0);
 	}
 	
+	.reload-button,
 	.toggle-button {
 		position: fixed;
 		width: 56px;
@@ -914,14 +1039,26 @@
 		color: #475569;
 	}
 	
+	.reload-button:hover,
 	.toggle-button:hover {
 		transform: scale(1.1);
 		box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
 		background: rgba(255, 255, 255, 1);
 	}
 	
+	.reload-button:active,
 	.toggle-button:active {
 		transform: scale(1.05);
+	}
+	
+	.reload-button.bottom-left {
+		bottom: 90px;
+		left: 20px;
+	}
+	
+	.reload-button.bottom-right {
+		bottom: 90px;
+		right: 20px;
 	}
 	
 	.toggle-button.bottom-left {
