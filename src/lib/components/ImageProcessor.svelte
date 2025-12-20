@@ -12,6 +12,8 @@
 	let dragover = false;
 	
 	let originalImageData: ImageData | null = null;
+	let processedImageData: ImageData | null = null;
+	let showOriginal = false;
 	let mode: ProcessingMode = 'dither-bayer';
 	let threshold = 128;
 	let pixelSize = 1;
@@ -138,7 +140,14 @@
 					if (canvas && ctx) {
 						canvas.width = imageData.width;
 						canvas.height = imageData.height;
-						ctx.putImageData(imageData, 0, 0);
+						processedImageData = imageData;
+						if (showOriginal && originalImageData) {
+							// Keep showing original if that's what's currently displayed
+							ctx.putImageData(originalImageData, 0, 0);
+						} else {
+							// Show the processed image
+							ctx.putImageData(imageData, 0, 0);
+						}
 					}
 					processing = false;
 				}
@@ -260,6 +269,18 @@
 	function handleParamChange() {
 		processImage();
 	}
+	
+	function toggleOriginal() {
+		if (!originalImageData || !ctx || !canvas) return;
+		showOriginal = !showOriginal;
+		if (showOriginal) {
+			ctx.putImageData(originalImageData, 0, 0);
+		} else if (processedImageData) {
+			ctx.putImageData(processedImageData, 0, 0);
+		}
+	}
+	
+	$: toggleButtonCorner = (panelCorner === 'bottom-left' || panelCorner === 'top-left') ? 'bottom-right' : 'bottom-left';
 </script>
 
 <svelte:window 
@@ -408,6 +429,22 @@
 				</button>
 			</div>
 		</div>
+		
+		<button 
+			class="toggle-button {toggleButtonCorner}"
+			on:click={toggleOriginal}
+			title={showOriginal ? 'Show Processed' : 'Show Original'}
+		>
+			<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+				{#if showOriginal}
+					<path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+					<path d="M9 9h6v6H9z"/>
+				{:else}
+					<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+					<circle cx="12" cy="12" r="3"/>
+				{/if}
+			</svg>
+		</button>
 	{/if}
 </div>
 
@@ -709,5 +746,43 @@
 
 	.export-btn:active {
 		transform: translateY(0);
+	}
+	
+	.toggle-button {
+		position: fixed;
+		width: 56px;
+		height: 56px;
+		border-radius: 50%;
+		background: rgba(255, 255, 255, 0.95);
+		backdrop-filter: blur(10px);
+		border: none;
+		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 50;
+		transition: all 0.2s;
+		color: #475569;
+	}
+	
+	.toggle-button:hover {
+		transform: scale(1.1);
+		box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+		background: rgba(255, 255, 255, 1);
+	}
+	
+	.toggle-button:active {
+		transform: scale(1.05);
+	}
+	
+	.toggle-button.bottom-left {
+		bottom: 20px;
+		left: 20px;
+	}
+	
+	.toggle-button.bottom-right {
+		bottom: 20px;
+		right: 20px;
 	}
 </style>
