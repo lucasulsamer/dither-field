@@ -170,6 +170,53 @@ function pixelate(
 	return output;
 }
 
+function pixelateColor(
+	imageData: ImageData,
+	pixelSize: number
+): ImageData {
+	const { width, height, data } = imageData;
+	const output = new ImageData(width, height);
+
+	for (let by = 0; by < height; by += pixelSize) {
+		for (let bx = 0; bx < width; bx += pixelSize) {
+			let sumR = 0, sumG = 0, sumB = 0;
+			let count = 0;
+
+			for (let dy = 0; dy < pixelSize && by + dy < height; dy++) {
+				for (let dx = 0; dx < pixelSize && bx + dx < width; dx++) {
+					const x = bx + dx;
+					const y = by + dy;
+					const idx = (y * width + x) * 4;
+
+					sumR += data[idx];
+					sumG += data[idx + 1];
+					sumB += data[idx + 2];
+					count++;
+				}
+			}
+
+			const avgR = Math.round(sumR / count);
+			const avgG = Math.round(sumG / count);
+			const avgB = Math.round(sumB / count);
+
+			for (let dy = 0; dy < pixelSize && by + dy < height; dy++) {
+				for (let dx = 0; dx < pixelSize && bx + dx < width; dx++) {
+					const x = bx + dx;
+					const y = by + dy;
+					const idx = (y * width + x) * 4;
+
+					output.data[idx] = avgR;
+					output.data[idx + 1] = avgG;
+					output.data[idx + 2] = avgB;
+					output.data[idx + 3] = 255;
+				}
+			}
+		}
+	}
+
+	return output;
+}
+
 self.onmessage = (e) => {
 	if (e.data.type === 'process') {
 		try {
@@ -180,13 +227,21 @@ self.onmessage = (e) => {
 			let processed: ImageData;
 
 			if (params.pixelSize > 1) {
-				imageData = pixelate(imageData, params.pixelSize);
+				// Use color-preserving pixelate for color modes
+				if (params.mode === 'dither-bayer-color') {
+					imageData = pixelateColor(imageData, params.pixelSize);
+				} else {
+					imageData = pixelate(imageData, params.pixelSize);
+				}
 			}
 
 			// Apply dithering to convert to black/white
 			switch (params.mode) {
 				case 'dither-bayer':
 					processed = ditherBayer(imageData, params.threshold);
+					break;
+				case 'dither-bayer-color':
+					processed = ditherBayerColor(imageData, params.threshold);
 					break;
 				default:
 					processed = imageData;
@@ -196,7 +251,11 @@ self.onmessage = (e) => {
 			const customColors = params.colorMode === 'custom' && params.customWhite && params.customGrey && params.customBlack
 				? { white: params.customWhite, grey: params.customGrey, black: params.customBlack }
 				: undefined;
-			processed = applyColorMode(processed, params.colorMode, customColors);
+			
+			// Only apply color mode for non-color dithering modes
+			if (params.mode !== 'dither-bayer-color') {
+				processed = applyColorMode(processed, params.colorMode, customColors);
+			}
 
 			self.postMessage({ type: 'processed', imageData: processed });
 		} catch (error) {
@@ -229,6 +288,36 @@ function ditherBayer(imageData: ImageData, threshold: number): ImageData {
 			output.data[idx] = value;
 			output.data[idx + 1] = value;
 			output.data[idx + 2] = value;
+			output.data[idx + 3] = 255;
+		}
+	}
+
+	return output;
+}
+
+function ditherBayerColor(imageData: ImageData, threshold: number): ImageData {
+	const { width, height, data } = imageData;
+	const output = new ImageData(width, height);
+
+	for (let y = 0; y < height; y++) {
+		for (let x = 0; x < width; x++) {
+			const idx = (y * width + x) * 4;
+			
+			// Get Bayer threshold
+			const bayerX = x % BAYER_SIZE;
+			const bayerY = y % BAYER_SIZE;
+			const bayerValue = BAYER_NORMALIZED[bayerY][bayerX];
+			
+			// Apply dithering to each color channel independently
+			const adjustedThreshold = threshold + (bayerValue - 0.5) * 100;
+			
+			const r = data[idx] > adjustedThreshold ? 255 : 0;
+			const g = data[idx + 1] > adjustedThreshold ? 255 : 0;
+			const b = data[idx + 2] > adjustedThreshold ? 255 : 0;
+			
+			output.data[idx] = r;
+			output.data[idx + 1] = g;
+			output.data[idx + 2] = b;
 			output.data[idx + 3] = 255;
 		}
 	}

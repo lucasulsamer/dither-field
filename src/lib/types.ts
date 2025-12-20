@@ -1,4 +1,4 @@
-export type ProcessingMode = 'dither-bayer' | 'dither-floyd' | 'halftone';
+export type ProcessingMode = 'dither-bayer' | 'dither-bayer-color' | 'dither-floyd' | 'halftone';
 export type ColorMode = 'grayscale' | 'blue' | 'red' | 'green' | 'yellow' | 'magenta' | 'cyan' | 'custom';
 export type BaseColorMode = 'grayscale' | 'blue' | 'red' | 'green' | 'yellow' | 'magenta' | 'cyan';
 
