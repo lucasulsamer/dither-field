@@ -10,8 +10,10 @@
 	let imageLoaded = false;
 	let processing = false;
 	let dragover = false;
+	let scaleEnabled = false;
 	
 	let originalImageData: ImageData | null = null;
+	let scaledImageData: ImageData | null = null;
 	let processedImageData: ImageData | null = null;
 	let showOriginal = false;
 	let mode: ProcessingMode = 'dither-bayer';
@@ -127,6 +129,45 @@
 		imagePanX = mouseX - imagePointX * imageScale;
 		imagePanY = mouseY - imagePointY * imageScale;
 	}
+	
+	function scaleImageData(imageData: ImageData, targetMaxDimension: number = 800): ImageData {
+		const { width, height } = imageData;
+		
+		// Calculate scale factor to fit within target dimension
+		const maxDimension = Math.max(width, height);
+		if (maxDimension <= targetMaxDimension) {
+			// Image is already smaller, return as-is
+			return imageData;
+		}
+		
+		const scale = targetMaxDimension / maxDimension;
+		const newWidth = Math.round(width * scale);
+		const newHeight = Math.round(height * scale);
+		
+		// Create a temporary canvas for scaling
+		const tempCanvas = document.createElement('canvas');
+		tempCanvas.width = newWidth;
+		tempCanvas.height = newHeight;
+		const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
+		
+		if (!tempCtx) return imageData;
+		
+		// Put original image data on a source canvas
+		const sourceCanvas = document.createElement('canvas');
+		sourceCanvas.width = width;
+		sourceCanvas.height = height;
+		const sourceCtx = sourceCanvas.getContext('2d');
+		
+		if (!sourceCtx) return imageData;
+		
+		sourceCtx.putImageData(imageData, 0, 0);
+		
+		// Scale down using canvas drawImage
+		tempCtx.drawImage(sourceCanvas, 0, 0, newWidth, newHeight);
+		
+		// Get the scaled image data
+		return tempCtx.getImageData(0, 0, newWidth, newHeight);
+	}
 
 	onMount(() => {
 		if (typeof Worker !== 'undefined') {
@@ -228,6 +269,19 @@
 		if (!originalImageData || !worker || processing) return;
 		
 		processing = true;
+		
+		// Apply scaling first if enabled
+		const imageDataToProcess = scaleEnabled 
+			? scaleImageData(originalImageData, 800) 
+			: originalImageData;
+		
+		// Store scaled version if scaling is enabled
+		if (scaleEnabled) {
+			scaledImageData = imageDataToProcess;
+		} else {
+			scaledImageData = null;
+		}
+		
 		const params: ProcessingParams = {
 			mode,
 			threshold,
@@ -240,9 +294,9 @@
 		
 		worker.postMessage({
 			type: 'process',
-			width: originalImageData.width,
-			height: originalImageData.height,
-			data: originalImageData.data,
+			width: imageDataToProcess.width,
+			height: imageDataToProcess.height,
+			data: imageDataToProcess.data,
 			params
 		});
 	}
@@ -274,8 +328,18 @@
 		if (!originalImageData || !ctx || !canvas) return;
 		showOriginal = !showOriginal;
 		if (showOriginal) {
-			ctx.putImageData(originalImageData, 0, 0);
+			// Show scaled version if scaling is enabled, otherwise show original
+			const imageToShow = scaleEnabled && scaledImageData ? scaledImageData : originalImageData;
+			if (canvas.width !== imageToShow.width || canvas.height !== imageToShow.height) {
+				canvas.width = imageToShow.width;
+				canvas.height = imageToShow.height;
+			}
+			ctx.putImageData(imageToShow, 0, 0);
 		} else if (processedImageData) {
+			if (canvas.width !== processedImageData.width || canvas.height !== processedImageData.height) {
+				canvas.width = processedImageData.width;
+				canvas.height = processedImageData.height;
+			}
 			ctx.putImageData(processedImageData, 0, 0);
 		}
 	}
@@ -381,6 +445,22 @@
 						<option value="cyan">Cyan</option>
 						<option value="custom">Custom...</option>
 					</select>
+				</div>
+
+				<div class="control-group">
+					<label for="scaleToggle">Scale</label>
+					<div class="toggle-container">
+						<label class="toggle-switch">
+							<input 
+								id="scaleToggle"
+								type="checkbox" 
+								bind:checked={scaleEnabled}
+								on:change={handleParamChange}
+							/>
+							<span class="slider"></span>
+						</label>
+						<span class="toggle-description">Downscale high-resolution images for better dithering</span>
+					</div>
 				</div>
 
 				{#if colorMode === 'custom'}
@@ -669,6 +749,74 @@
 		color: #333;
 		text-transform: uppercase;
 		letter-spacing: 0.5px;
+	}
+	
+	.toggle-container {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+	}
+	
+	.toggle-switch {
+		position: relative;
+		display: inline-block;
+		width: 48px;
+		height: 26px;
+		flex-shrink: 0;
+	}
+	
+	.toggle-switch input[type="checkbox"] {
+		opacity: 0;
+		width: 0;
+		height: 0;
+	}
+	
+	.slider {
+		position: absolute;
+		cursor: pointer;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background: #ddd;
+		transition: all 0.3s;
+		border-radius: 34px;
+		box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+	}
+	
+	.slider:before {
+		position: absolute;
+		content: "";
+		height: 20px;
+		width: 20px;
+		left: 3px;
+		bottom: 3px;
+		background: white;
+		transition: all 0.3s;
+		border-radius: 50%;
+		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+	}
+	
+	.toggle-switch input:checked + .slider {
+		background: linear-gradient(135deg, #64748b 0%, #475569 100%);
+	}
+	
+	.toggle-switch input:checked + .slider:before {
+		transform: translateX(22px);
+	}
+	
+	.toggle-switch input:focus + .slider {
+		box-shadow: 0 0 0 3px rgba(100, 116, 139, 0.2);
+	}
+	
+	.toggle-switch:hover .slider {
+		box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.15), 0 0 0 2px rgba(100, 116, 139, 0.1);
+	}
+	
+	.toggle-description {
+		font-size: 0.8rem;
+		color: #666;
+		line-height: 1.3;
 	}
 
 	select {
